@@ -37,7 +37,7 @@ foreach ($file in $files) {
             New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
         }
 
-        Copy-Item $file.FullName $targetPath -Force
+        Copy-Item -LiteralPath $file.FullName -Destination $targetPath -Force
         Write-Host "Copied: $($file.FullName) --> $targetPath"
         $copied = $true
         break
