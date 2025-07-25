@@ -17,21 +17,37 @@ def has_enough_space(dest: Path, file_size: int) -> bool:
 def relative_path(full_path: Path, base: Path) -> Path:
     return full_path.relative_to(base)
 
-def already_copied(file_path: Path, rel_path: Path) -> bool:
-    for dest in DESTINATIONS:
-        target_path = dest / rel_path
-        if target_path.exists() and target_path.stat().st_size == file_path.stat().st_size:
-            print(f"Already exists: {target_path} (same size, skipping)")
-            return True
-    return False
+def build_existing_file_index(destinations: list[Path]) -> set[tuple[str, int]]:
+    existing_files = set()
+    print("Building existing file index...")
+    for dest in destinations:
+        print(f"Indexing: {dest}")
+        for root, dirs, files in os.walk(dest):
+            root_path = Path(root)
+            for name in files:
+                full_path = root_path / name
+                rel_path = full_path.relative_to(dest)
+                try:
+                    size = full_path.stat().st_size
+                    existing_files.add((str(rel_path).lower(), size))
+                except Exception as e:
+                    print(f"[ERROR] Skipping during index: {full_path} - {e}")
+    print(f"Indexed {len(existing_files)} existing files.")
+    return existing_files
+
+def already_copied(rel_path: str, size: int, existing_index: set[tuple[str, int]]) -> bool:
+    return (rel_path.lower(), size) in existing_index
 
 def main():
     all_files: list[tuple[Path, Path]] = []
     print(f"Scanning sources: {SOURCES}")
+
+    # Build index once at the beginning
+    existing_index = build_existing_file_index(DESTINATIONS)
+
     for source in SOURCES:
         print(f"Walking source directory: {source}")
         for root, dirs, files in os.walk(source):
-            # Exclude specific directory names from being traversed
             dirs[:] = [d for d in dirs if d.lower() not in EXCLUDED_DIRNAMES]
 
             root_path = Path(root)
@@ -55,7 +71,8 @@ def main():
     print(f"Total files to evaluate: {len(all_files)}")
     for file_path, base in all_files:
         rel_path = relative_path(file_path, base)
-        if already_copied(file_path, rel_path):
+        if already_copied(str(rel_path), file_path.stat().st_size, existing_index):
+            print(f"[SKIP] Already copied: {file_path}")
             continue
 
         file_size = file_path.stat().st_size
