@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 SEARCH_PATHS = ["H:\\", "I:\\", "J:\\"]
-UNWANTED_EXTS = {".srt", ".tmp", ".bak"}
+UNWANTED_EXTS = {".srt", ".tmp", ".bak", ".parts"}
 UNWANTED_NAMES = {"thumbs.db", ".DS_Store"}
 
 def is_unwanted(file_path: Path):
