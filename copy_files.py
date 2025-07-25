@@ -4,6 +4,8 @@ import psutil
 
 SOURCE = "Y:\\"
 DESTINATIONS = ["H:\\", "I:\\", "J:\\"]
+EXCLUDED_EXTENSIONS = {".srt", ".tmp", ".bak"}
+EXCLUDED_FILENAMES = {"thumbs.db", ".DS_Store"}
 THRESHOLD_BYTES = 500 * 1024**3  # 500 GB
 
 def has_enough_space(dest, file_size):
@@ -26,6 +28,10 @@ def main():
     for root, dirs, files in os.walk(SOURCE):
         for name in files:
             full_path = os.path.join(root, name)
+            ext = os.path.splitext(name)[1].lower()
+            if name.lower() in EXCLUDED_FILENAMES or ext in EXCLUDED_EXTENSIONS:
+                continue
+
             try:
                 os.path.getsize(full_path)  # Trigger OSError early if needed
                 all_files.append(full_path)
