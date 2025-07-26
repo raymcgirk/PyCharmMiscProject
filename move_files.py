@@ -88,7 +88,8 @@ def main():
             print(f"Preparing to move to: {target_path}")
             target_path.parent.mkdir(parents=True, exist_ok=True)
             try:
-                shutil.move(file_path, target_path)
+                shutil.copy2(file_path, target_path)
+                file_path.unlink()
                 print(f"[MOVE] {file_path} -> {target_path}")
                 moved = True
                 break
