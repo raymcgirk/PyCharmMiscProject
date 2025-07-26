@@ -104,6 +104,33 @@ def extract_file_path(metadata_xml):
             return part.attrib.get('file')
     return None
 
+def export_plex_library():
+    print("📡 Connecting to Plex...")
+    libraries = get_libraries()
+
+    for key, title in libraries:
+        print(f"\n📁 Scanning library: {title}")
+        items = get_items(key)
+
+        for export_item in tqdm(items, desc=f"Exporting {title}"):
+            try:
+                item_type = export_item.attrib.get("type")
+
+                if item_type == "show":
+                    episode_xml = get_episodes(export_item.attrib["ratingKey"])
+                    for episode in episode_xml.findall(".//Video"):
+                        process_item(episode, title)
+                else:
+                    process_item(export_item, title)
+
+            except Exception as e:
+                print(
+                    f"⚠️ Error processing item {export_item.attrib.get('title', 'Unknown')} (type: {export_item.attrib.get('type')}): {e}"
+                )
+
+    print("\n✅ Export complete. Data saved to", DB_FILE)
+    conn.close()
+
 def process_item(item, section_title):
     data = {
         'rating_key': item.attrib.get('ratingKey'),
@@ -132,28 +159,4 @@ def process_item(item, section_title):
     conn.commit()
 
 if __name__ == '__main__':
-    print("📡 Connecting to Plex...")
-    libraries = get_libraries()
-
-    for key, title in libraries:
-        print(f"\n📁 Scanning library: {title}")
-        items = get_items(key)
-
-        for export_item in tqdm(items, desc=f"Exporting {title}"):
-            try:
-                item_type = export_item.attrib.get("type")
-
-                # If it's a TV show, get all episodes and process those
-                if item_type == "show":
-                    episode_xml = get_episodes(export_item.attrib["ratingKey"])
-                    for episode in episode_xml.findall(".//Video"):
-                        process_item(episode, title)
-                else:
-                    process_item(export_item, title)
-
-            except Exception as e:
-                print(
-                    f"⚠️ Error processing item {export_item.attrib.get('title', 'Unknown')} (type: {export_item.attrib.get('type')}): {e}")
-
-    print("\n✅ Export complete. Data saved to", DB_FILE)
-    conn.close()
+    export_plex_library()
