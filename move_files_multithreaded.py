@@ -43,6 +43,7 @@ def already_moved(rel_path: str, size: int, existing_index: set[tuple[str, int]]
 def move_file(file_path: Path, base: Path, destinations: list[Path], existing_index: set[tuple[str, int]]):
     rel_path = relative_path(file_path, base)
     size = file_path.stat().st_size
+    moved = False  # <-- add this
 
     if already_moved(str(rel_path), size, existing_index):
         print(f"[SKIP] Already moved: {file_path}")
@@ -54,14 +55,28 @@ def move_file(file_path: Path, base: Path, destinations: list[Path], existing_in
 
         target_path = dest / rel_path
         try:
-            target_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(file_path, target_path)
+
+            # Verify the file size matches
+            original_size = file_path.stat().st_size
+            copied_size = target_path.stat().st_size
+
+            if original_size != copied_size:
+                print(f"[ERROR] Size mismatch: {file_path} ({original_size}) -> {target_path} ({copied_size})")
+                target_path.unlink(missing_ok=True)
+                continue  # Try the next destination or skip
+
             file_path.unlink()
             print(f"[MOVE] {file_path} -> {target_path}")
-            return
+            existing_index.add((str(rel_path).lower(), size))
+            moved = True
+            break
+
         except Exception as e:
             print(f"[ERROR] Failed to move {file_path} -> {target_path}: {e}")
-    print(f"[WARNING] All destinations full. Skipped: {file_path}")
+
+    if not moved:
+        print(f"[WARNING] All destinations full. Skipped: {file_path}")
 
 def main():
     all_files: list[tuple[Path, Path]] = []

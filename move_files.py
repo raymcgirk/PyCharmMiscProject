@@ -89,10 +89,21 @@ def main():
             target_path.parent.mkdir(parents=True, exist_ok=True)
             try:
                 shutil.copy2(file_path, target_path)
+
+                # Verify the file size matches
+                original_size = file_path.stat().st_size
+                copied_size = target_path.stat().st_size
+
+                if original_size != copied_size:
+                    print(f"[ERROR] Size mismatch: {file_path} ({original_size}) -> {target_path} ({copied_size})")
+                    target_path.unlink(missing_ok=True)
+                    continue  # Try the next destination or skip
+
                 file_path.unlink()
                 print(f"[MOVE] {file_path} -> {target_path}")
                 moved = True
                 break
+
             except Exception as e:
                 print(f"[ERROR] Failed to move {file_path} -> {target_path}: {e}")
 
