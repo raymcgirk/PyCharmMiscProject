@@ -61,11 +61,34 @@ def get_libraries():
     xml = ElementTree.fromstring(res.content)
     return [(el.attrib['key'], el.attrib['title']) for el in xml.findall('.//Directory')]
 
-def get_items(library_key):
-    url = f'{PLEX_BASE_URL}/library/sections/{library_key}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=10000'
+def get_episodes(show_rating_key):
+    url = f"{PLEX_BASE_URL}/library/metadata/{show_rating_key}/allLeaves"
     res = requests.get(url, headers=HEADERS)
     res.raise_for_status()
     return ElementTree.fromstring(res.content)
+
+def get_items(library_key):
+    all_items = []
+    start = 0
+    batch_size = 1000
+
+    while True:
+        url = (
+            f'{PLEX_BASE_URL}/library/sections/{library_key}/all'
+            f'?X-Plex-Container-Start={start}&X-Plex-Container-Size={batch_size}'
+        )
+        res = requests.get(url, headers=HEADERS)
+        res.raise_for_status()
+        xml = ElementTree.fromstring(res.content)
+
+        library_items = xml.findall('.//Video') + xml.findall('.//Directory')
+        if not library_items:
+            break  # No more to fetch
+
+        all_items.extend(library_items)
+        start += batch_size
+
+    return all_items
 
 def get_metadata(rating_key):
     url = f'{PLEX_BASE_URL}/library/metadata/{rating_key}'
@@ -114,14 +137,23 @@ if __name__ == '__main__':
 
     for key, title in libraries:
         print(f"\n📁 Scanning library: {title}")
-        items_xml = get_items(key)
-        items = items_xml.findall('.//Video') + items_xml.findall('.//Directory')
+        items = get_items(key)
 
         for export_item in tqdm(items, desc=f"Exporting {title}"):
             try:
-                process_item(export_item, title)
+                item_type = export_item.attrib.get("type")
+
+                # If it's a TV show, get all episodes and process those
+                if item_type == "show":
+                    episode_xml = get_episodes(export_item.attrib["ratingKey"])
+                    for episode in episode_xml.findall(".//Video"):
+                        process_item(episode, title)
+                else:
+                    process_item(export_item, title)
+
             except Exception as e:
-                print(f"⚠️ Error processing item {export_item.attrib.get('title')}: {e}")
+                print(
+                    f"⚠️ Error processing item {export_item.attrib.get('title', 'Unknown')} (type: {export_item.attrib.get('type')}): {e}")
 
     print("\n✅ Export complete. Data saved to", DB_FILE)
     conn.close()
