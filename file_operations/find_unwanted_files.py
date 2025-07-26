@@ -23,7 +23,7 @@ def scan_and_list():
         print(f)
 
     # Write to a text file for review
-    with open("unwanted_files.txt", "w", encoding="utf-8") as out:
+    with open("../unwanted_files.txt", "w", encoding="utf-8") as out:
         out.writelines(f"{f}\n" for f in found)
 
 if __name__ == "__main__":
