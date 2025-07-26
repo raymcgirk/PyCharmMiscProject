@@ -3,7 +3,7 @@ import shutil
 import psutil
 import os
 
-SOURCES = [Path("X:\\"), Path("Y:\\")]
+SOURCES = [Path("X:\\"), Path("Y:\\"), Path("Z:\\")]
 DESTINATIONS = [Path("H:\\"), Path("I:\\"), Path("J:\\")]
 EXCLUDED_EXTENSIONS = {".srt", ".tmp", ".bak"}
 EXCLUDED_FILENAMES = {"thumbs.db", ".DS_Store"}
@@ -40,10 +40,11 @@ def already_copied(rel_path: str, size: int, existing_index: set[tuple[str, int]
 
 def main():
     all_files: list[tuple[Path, Path]] = []
-    print(f"Scanning sources: {SOURCES}")
 
     # Build index once at the beginning
     existing_index = build_existing_file_index(DESTINATIONS)
+
+    print(f"Scanning sources: {SOURCES}")
 
     for source in SOURCES:
         print(f"Walking source directory: {source}")
