@@ -71,12 +71,21 @@ def main():
 
     print(f"Total files to evaluate: {len(all_files)}")
     for file_path, base in all_files:
-        rel_path = relative_path(file_path, base)
-        if already_copied(str(rel_path), file_path.stat().st_size, existing_index):
-            print(f"[SKIP] Already copied: {file_path}")
+        try:
+            rel_path = relative_path(file_path, base)
+            try:
+                file_size = file_path.stat().st_size
+            except Exception as e:
+                print(f"[ERROR] Could not stat {file_path} for size check: {e}")
+                continue
+
+            if already_copied(str(rel_path), file_size, existing_index):
+                print(f"[SKIP] Already copied: {file_path}")
+                continue
+        except Exception as e:
+            print(f"[ERROR] Failed to prepare file {file_path}: {e}")
             continue
 
-        file_size = file_path.stat().st_size
         copied = False
         for dest in DESTINATIONS:
             print(f"Checking destination: {dest}")
