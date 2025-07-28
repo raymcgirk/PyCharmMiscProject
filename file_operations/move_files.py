@@ -95,8 +95,8 @@ def main():
 
             target_path = dest / rel_path
             print(f"Preparing to move to: {target_path}")
-            target_path.parent.mkdir(parents=True, exist_ok=True)
             try:
+                target_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(file_path, target_path)
 
                 # Verify the file size matches
