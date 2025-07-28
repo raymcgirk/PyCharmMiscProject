@@ -71,12 +71,21 @@ def main():
 
     print(f"Total files to evaluate: {len(all_files)}")
     for file_path, base in all_files:
-        rel_path = relative_path(file_path, base)
-        if already_moved(str(rel_path), file_path.stat().st_size, existing_index):
-            print(f"[SKIP] Already moved: {file_path}")
+        try:
+            rel_path = relative_path(file_path, base)
+            try:
+                file_size = file_path.stat().st_size
+            except Exception as e:
+                print(f"[ERROR] Could not stat {file_path} for size check: {e}")
+                continue
+
+            if already_moved(str(rel_path), file_size, existing_index):
+                print(f"[SKIP] Already moved: {file_path}")
+                continue
+        except Exception as e:
+            print(f"[ERROR] Failed to prepare file {file_path}: {e}")
             continue
 
-        file_size = file_path.stat().st_size
         moved = False
         for dest in DESTINATIONS:
             print(f"Checking destination: {dest}")
@@ -91,16 +100,29 @@ def main():
                 shutil.copy2(file_path, target_path)
 
                 # Verify the file size matches
-                original_size = file_path.stat().st_size
-                copied_size = target_path.stat().st_size
+                try:
+                    original_size = file_path.stat().st_size
+                    moved_size = target_path.stat().st_size
+                except Exception as e:
+                    print(f"[ERROR] Failed to stat files for size check: {file_path} or {target_path} - {e}")
+                    try:
+                        target_path.unlink(missing_ok=True)
+                        print(f"[CLEANUP] Deleted target after stat failure: {target_path}")
+                    except Exception as cleanup_error:
+                        print(f"[ERROR] Could not clean up target: {cleanup_error}")
+                    continue
 
-                if original_size != copied_size:
-                    print(f"[ERROR] Size mismatch: {file_path} ({original_size}) -> {target_path} ({copied_size})")
+                if original_size != moved_size:
+                    print(f"[ERROR] Size mismatch: {file_path} ({original_size}) -> {target_path} ({moved_size})")
                     target_path.unlink(missing_ok=True)
                     continue  # Try the next destination or skip
 
-                file_path.unlink()
-                print(f"[MOVE] {file_path} -> {target_path}")
+                try:
+                    file_path.unlink()
+                    print(f"[MOVE] {file_path} -> {target_path}")
+                except Exception as e:
+                    print(f"[ERROR] Copied but failed to delete source {file_path}: {e}")
+
                 moved = True
                 break
 
