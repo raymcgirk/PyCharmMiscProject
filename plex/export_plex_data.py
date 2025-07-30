@@ -128,8 +128,117 @@ def export_plex_library():
                     f"⚠️ Error processing item {export_item.attrib.get('title', 'Unknown')} (type: {export_item.attrib.get('type')}): {e}"
                 )
 
+    export_playlists()
+
     print("\n✅ Export complete. Data saved to", DB_FILE)
     conn.close()
+
+def export_playlists():
+    print("\n🎶 Exporting playlists...")
+
+    cur.execute('''
+    CREATE TABLE IF NOT EXISTS playlists (
+        rating_key TEXT PRIMARY KEY,
+        title TEXT,
+        playlist_type TEXT,
+        leaf_count INTEGER,
+        smart INTEGER,
+        duration INTEGER,
+        added_at INTEGER,
+        updated_at INTEGER,
+        summary TEXT
+    )
+    ''')
+    cur.execute('''
+    CREATE TABLE IF NOT EXISTS playlist_items (
+        playlist_rating_key TEXT,
+        item_rating_key TEXT,
+        item_guid TEXT,
+        item_title TEXT,
+        item_type TEXT,
+        file_path TEXT,
+        view_count INTEGER,
+        last_viewed_at INTEGER,
+        view_offset INTEGER,
+        user_rating REAL,
+        added_at INTEGER,
+        originally_available_at INTEGER,
+        PRIMARY KEY (playlist_rating_key, item_rating_key)
+    )
+    ''')
+    conn.commit()
+
+    url = f"{PLEX_BASE_URL}/playlists"
+    res = requests.get(url, headers=HEADERS)
+    res.raise_for_status()
+    xml = ElementTree.fromstring(res.content)
+    playlists = xml.findall(".//Playlist")
+
+    print(f"📋 Found {len(playlists)} playlists to export.")
+
+    for pl in tqdm(playlists, desc="Playlists"):
+        pl_data = {
+            'rating_key': pl.attrib.get('ratingKey'),
+            'title': pl.attrib.get('title'),
+            'playlist_type': pl.attrib.get('playlistType'),
+            'leaf_count': int(pl.attrib.get('leafCount', 0)),
+            'smart': int(pl.attrib.get('smart', '0')),
+            'duration': int(pl.attrib.get('duration', 0)),
+            'added_at': int(pl.attrib.get('addedAt', 0)),
+            'updated_at': int(pl.attrib.get('updatedAt', 0)),
+            'summary': pl.attrib.get('summary', '')
+        }
+
+        cur.execute('''
+        INSERT OR REPLACE INTO playlists
+        (rating_key, title, playlist_type, leaf_count, smart, duration, added_at, updated_at, summary)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            pl_data['rating_key'], pl_data['title'], pl_data['playlist_type'],
+            pl_data['leaf_count'], pl_data['smart'], pl_data['duration'],
+            pl_data['added_at'], pl_data['updated_at'], pl_data['summary']
+        ))
+        conn.commit()
+
+        # Get playlist items
+        pl_items_url = f"{PLEX_BASE_URL}/playlists/{pl_data['rating_key']}/items"
+        pl_items_res = requests.get(pl_items_url, headers=HEADERS)
+        pl_items_res.raise_for_status()
+        pl_xml = ElementTree.fromstring(pl_items_res.content)
+        pl_media_items = pl_xml.findall('.//Video') + pl_xml.findall('.//Track')
+
+        if not pl_media_items:
+            print(f"⚠️ Playlist '{pl_data['title']}' is empty.")
+        else:
+            print(f"✅ Saved playlist: '{pl_data['title']}' with {len(pl_media_items)} items:")
+            for item in pl_media_items:
+                print(f"   - {item.attrib.get('title') or item.attrib.get('grandparentTitle')}")
+
+        for item in pl_media_items:
+            rating_key = item.attrib.get('ratingKey')
+            meta_xml = get_metadata(rating_key)
+            file_path = extract_file_path(meta_xml)
+            cur.execute('''
+            INSERT OR REPLACE INTO playlist_items (
+                playlist_rating_key, item_rating_key, item_guid, item_title, item_type,
+                file_path, view_count, last_viewed_at, view_offset, user_rating,
+                added_at, originally_available_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                pl_data['rating_key'],
+                rating_key,
+                item.attrib.get('guid'),
+                item.attrib.get('title') or item.attrib.get('grandparentTitle'),
+                item.attrib.get('type'),
+                file_path,
+                item.attrib.get('viewCount'),
+                item.attrib.get('lastViewedAt'),
+                item.attrib.get('viewOffset'),
+                item.attrib.get('userRating'),
+                item.attrib.get('addedAt'),
+                item.attrib.get('originallyAvailableAt')
+            ))
+        conn.commit()
 
 def process_item(item, section_title):
     data = {
