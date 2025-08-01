@@ -76,7 +76,7 @@ def extract_pool_name(pool_path):
     parts = os.path.normpath(pool_path).split(os.sep)
     if len(parts) >= 3 and parts[1] == "mnt":
         return parts[2]
-    return "POOL"
+    return os.path.basename(pool_path.rstrip("/"))
 
 def process_pool_recursively(pool_path, dry_run=False):
     for root, dirs, files in os.walk(pool_path):
