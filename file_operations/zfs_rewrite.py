@@ -96,6 +96,41 @@ def process_pool_recursively(pool_path, dry_run=False):
 def get_script_dir():
     return os.path.dirname(os.path.realpath(__file__))
 
+def cleanup_done_markers(pool_path):
+    log("")
+    log("=== Post-Processing Cleanup: Removing .zfsrewrite.done markers ===")
+    count = 0
+    for root, dirs, files in os.walk(pool_path):
+        for name in files:
+            if name.endswith(".zfsrewrite.done"):
+                marker_path = os.path.join(root, name)
+                try:
+                    os.remove(marker_path)
+                    count += 1
+                except Exception as e:
+                    log(f"[WARNING] Failed to delete marker {marker_path}: {e}")
+    log(f"Removed {count} .zfsrewrite.done files.")
+    log("=== Cleanup complete ===")
+
+    # 🔍 Post-cleanup validation scan
+    log("")
+    log("=== Validating marker cleanup ===")
+    residuals = []
+    for root, dirs, files in os.walk(pool_path):
+        for name in files:
+            if name.endswith(".zfsrewrite") or name.endswith(".zfsrewrite.done"):
+                residuals.append(os.path.join(root, name))
+
+    if residuals:
+        log(f"[WARNING] {len(residuals)} .zfsrewrite-related files still found after cleanup.")
+        for path in residuals[:10]:  # Log first 10 for inspection
+            log(f" - {path}")
+        if len(residuals) > 10:
+            log(f"...and {len(residuals) - 10} more not shown")
+    else:
+        log("Scan complete: 0 zfsrewrite files found.")
+    log("=========================================\n")
+
 def main():
     parser = argparse.ArgumentParser(description="ZFS in-place rewrite tool with resume and logging")
     parser.add_argument("pool_path", help="Path to mounted ZFS pool (e.g. /mnt/my-pool)")
@@ -124,6 +159,10 @@ def main():
         if dry_run:
             log("[MODE] Dry-run only — no files will be modified.")
         process_pool_recursively(pool_path, dry_run=dry_run)
+
+        if not dry_run:
+            cleanup_done_markers(pool_path)
+
         log("Completed rewrite.")
     finally:
         if log_file:
