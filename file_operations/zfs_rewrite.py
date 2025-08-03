@@ -1,9 +1,9 @@
 import os
-import shutil
 import hashlib
 import sys
 import argparse
 from datetime import datetime
+import subprocess
 
 log_file = None
 
@@ -12,7 +12,7 @@ def log(message):
     line = f"{timestamp} {message}"
     print(line)
     if log_file:
-        print(line, file=log_file)
+        print(line, file=log_file, flush=True)
 
 def hash_file(path):
     h = hashlib.sha256()
@@ -20,6 +20,14 @@ def hash_file(path):
         while chunk := f.read(8192):
             h.update(chunk)
     return h.hexdigest()
+
+def rsync_copy(src, dst):
+    """Use rsync to copy files while preserving all metadata"""
+    result = subprocess.run([
+        "rsync", "-aXAH", "--inplace", "--no-compress", "--progress", src, dst
+    ], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"rsync failed: {result.stderr.strip()}")
 
 def rewrite_file(file_path, dry_run=False):
     temp_path = file_path + ".zfsrewrite"
@@ -42,27 +50,35 @@ def rewrite_file(file_path, dry_run=False):
         return
 
     try:
-        log(f"[COPY] {file_path} → {temp_path}")
-        shutil.copy2(file_path, temp_path)
+        log(f"[STEP] Copying original → temp: {file_path} → {temp_path}")
+        rsync_copy(file_path, temp_path)
+        log(f"[STEP] Copy successful")
 
+        log(f"[STEP] Hashing original file")
         original_hash = hash_file(file_path)
+        log(f"[STEP] Hashing temp file")
         temp_hash = hash_file(temp_path)
 
         if original_hash != temp_hash:
-            log(f"[ERROR] Hash mismatch! Aborting rewrite: {file_path}")
+            log(f"[ERROR] Hash mismatch after copy. Aborting rewrite: {file_path}")
             os.remove(temp_path)
             return
+        log(f"[STEP] Hash match verified after copy")
 
-        log(f"[DELETE] {file_path}")
+        log(f"[STEP] Deleting original file: {file_path}")
         os.remove(file_path)
+        log(f"[STEP] Original file deleted")
 
-        log(f"[RENAME] {temp_path} → {file_path}")
+        log(f"[STEP] Renaming temp → original: {temp_path} → {file_path}")
         os.rename(temp_path, file_path)
+        log(f"[STEP] Rename successful")
 
+        log(f"[STEP] Verifying final file hash")
         final_hash = hash_file(file_path)
         if final_hash != original_hash:
-            log(f"[ERROR] Final verification failed: {file_path}")
+            log(f"[ERROR] Final hash mismatch after rename: {file_path}")
             return
+        log(f"[STEP] Final hash verified")
 
         with open(done_marker, 'w') as f:
             f.write("ok\n")
@@ -88,6 +104,9 @@ def process_pool_recursively(pool_path, dry_run=False):
             full_path = os.path.join(root, name)
             try:
                 if os.path.islink(full_path):
+                    continue
+                if full_path.endswith(".zfsrewrite") or full_path.endswith(".zfsrewrite.done"):
+                    log(f"[SKIP] Temp or marker file: {full_path}")
                     continue
                 rewrite_file(full_path, dry_run=dry_run)
             except Exception as e:
@@ -146,6 +165,8 @@ def main():
 
     pool_name = extract_pool_name(pool_path)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Dynamically use script location for log file
     script_dir = get_script_dir()
     log_filename = f"zfs_rewrite_{pool_name}_{timestamp}.log"
     log_path = os.path.join(script_dir, log_filename)
@@ -153,16 +174,20 @@ def main():
     global log_file
     try:
         log_file = open(log_path, "w")
-        log(f"Started ZFS rewrite on pool: {pool_name}")
-        log(f"Target path: {pool_path}")
-        log(f"Log file: {log_path}")
-        if dry_run:
-            log("[MODE] Dry-run only — no files will be modified.")
-        process_pool_recursively(pool_path, dry_run=dry_run)
+    except Exception as e:
+        print(f"[FATAL] Could not create log file at {log_path}: {e}")
+        sys.exit(1)
 
+    log(f"Started ZFS rewrite on pool: {pool_name}")
+    log(f"Target path: {pool_path}")
+    log(f"Log file: {log_path}")
+    if dry_run:
+        log("[MODE] Dry-run only — no files will be modified.")
+
+    try:
+        process_pool_recursively(pool_path, dry_run=dry_run)
         if not dry_run:
             cleanup_done_markers(pool_path)
-
         log("Completed rewrite.")
     finally:
         if log_file:
