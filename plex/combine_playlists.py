@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+from datetime import datetime, date
 
 import requests
 from plexapi.exceptions import NotFound
@@ -29,6 +30,40 @@ logging.info("Script started")
 
 PLEX_URL = os.getenv("PLEX_URL", "http://localhost:32400")
 PLEX_TOKEN = os.getenv("PLEX_TOKEN", "")
+
+# Get rebuild hour from env variable (default to 3 AM)
+try:
+    REBUILD_HOUR = int(os.getenv("REBUILD_HOUR", "3"))
+except ValueError:
+    logging.warning("Invalid REBUILD_HOUR value; falling back to 3")
+    REBUILD_HOUR = 3
+
+REBUILD_TRACKER_PATH = os.path.join(script_dir, "last_rebuild.txt")
+
+def should_do_rebuild():
+    now = datetime.now()
+
+    if now.hour < REBUILD_HOUR:
+        return False
+
+    if not os.path.exists(REBUILD_TRACKER_PATH):
+        return True
+
+    with open(REBUILD_TRACKER_PATH, "r") as f:
+        last_rebuild_date = f.read().strip()
+
+    return last_rebuild_date != str(date.today())
+
+def mark_rebuild_done():
+    with open(REBUILD_TRACKER_PATH, "w") as f:
+        f.write(str(date.today()))
+
+# Determine whether this run is a rebuild or an incremental update
+full_rebuild = should_do_rebuild()
+if full_rebuild:
+    logging.info(f"Performing full rebuild (after {REBUILD_HOUR}:00).")
+else:
+    logging.info("Performing incremental update (playlist append/remove only).")
 
 # Retry logic for unstable network/API
 def safe_get_section(plex_server, section_name, retries=3, delay=10):
@@ -171,3 +206,7 @@ for decade in decades:
 
     except Exception as decade_error:
         logging.error(f"Failed to combine playlists for {decade['name']}: {decade_error}")
+
+if full_rebuild:
+    mark_rebuild_done()
+    logging.info("Rebuild completed and marked as done for today.")
