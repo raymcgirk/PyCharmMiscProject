@@ -1,19 +1,33 @@
-import json
 import os
+import sys
 import time
 
 import requests
 from plexapi.exceptions import NotFound
 from plexapi.server import PlexServer
 
-# Load configuration from config.json
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
+import logging
 
-with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-    config = json.load(f)
+# Set up logging to a file in the same directory as the script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+log_path = os.path.join(script_dir, "combine_playlists.log")
 
-PLEX_URL = config["plex_url"]
-PLEX_TOKEN = config["plex_token"]
+logging.basicConfig(
+    filename=log_path,
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
+# Also output to console
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+logging.getLogger().addHandler(console_handler)
+
+logging.info("Script started")
+
+PLEX_URL = os.getenv("PLEX_URL", "http://localhost:32400")
+PLEX_TOKEN = os.getenv("PLEX_TOKEN", "")
 
 # Retry logic for unstable network/API
 def safe_get_section(plex_server, section_name, retries=3, delay=10):
@@ -21,10 +35,10 @@ def safe_get_section(plex_server, section_name, retries=3, delay=10):
         try:
             return plex_server.library.section(section_name)
         except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as error:
-            print(f"Timeout/connection error on section '{section_name}', attempt {attempt_index + 1}/{retries}: {error}")
+            logging.warning(f"Timeout/connection error on section '{section_name}', attempt {attempt_index + 1}/{retries}: {error}")
             time.sleep(delay)
         except NotFound:
-            print(f"Library section '{section_name}' not found.")
+            logging.warning(f"Library section '{section_name}' not found.")
             break
     raise RuntimeError(f"Failed to get section '{section_name}' after {retries} attempts")
 
@@ -34,9 +48,10 @@ for attempt in range(3):
         plex = PlexServer(PLEX_URL, PLEX_TOKEN)
         break
     except requests.exceptions.RequestException as e:
-        print(f"Failed to connect to Plex server (attempt {attempt + 1}/3): {e}")
+        logging.error(f"Failed to connect to Plex server (attempt {attempt + 1}/3): {e}")
         time.sleep(10)
 else:
+    logging.error("Could not connect to Plex server after retries.")
     raise RuntimeError("Could not connect to Plex server after retries.")
 
 # Safely fetch sections
@@ -46,7 +61,7 @@ try:
     youtube_section = safe_get_section(plex, 'YouTube')
 except RuntimeError:
     youtube_section = None
-    print("YouTube library section not found or unavailable. Skipping...")
+    logging.warning("YouTube library section not found or unavailable. Skipping...")
 
 # Fetch all unique years in the library
 years = set()
@@ -69,8 +84,8 @@ if youtube_section:
 
 # If no years are found, exit
 if not years:
-    print("No valid content years found.")
-    exit()
+    logging.info("No valid content years found.")
+    sys.exit(0)
 
 # Determine the range of decades
 min_year = min(years)
@@ -99,13 +114,13 @@ for decade in decades:
                 try:
                     unwatched_youtube = youtube_section.search(unwatched=True, year=year)
                 except Exception as e:
-                    print(f"Error searching YouTube videos for year {year}: {e}")
+                    logging.error(f"Error searching YouTube videos for year {year}: {e}")
 
             # Add movies and TV episodes to the combined list
             combined_items += unwatched_movies + unwatched_tv_episodes + unwatched_youtube
 
         # Print summary
-        print(f"Found {len(combined_items)} unwatched items for {decade['name']}")
+        logging.info(f"Found {len(combined_items)} unwatched items for {decade['name']}")
 
         # Only create/update a playlist if there are items
         if combined_items:
@@ -115,7 +130,7 @@ for decade in decades:
             # Check if the combined playlist exists
             try:
                 combined_playlist = plex.playlist(combined_playlist_name)
-                print(f"Updating existing playlist '{combined_playlist_name}'")
+                logging.info(f"Updating existing playlist '{combined_playlist_name}'")
 
                 # Determine which items need to be added or removed
                 current_items = combined_playlist.items()
@@ -125,22 +140,22 @@ for decade in decades:
                 # Update the playlist
                 if items_to_add:
                     combined_playlist.addItems(items_to_add)
-                    print(f"Added {len(items_to_add)} items to '{combined_playlist_name}'")
+                    logging.info(f"Added {len(items_to_add)} items to '{combined_playlist_name}'")
 
                 if items_to_remove:
                     combined_playlist.removeItems(items_to_remove)
-                    print(f"Removed {len(items_to_remove)} items from '{combined_playlist_name}'")
+                    logging.info(f"Removed {len(items_to_remove)} items from '{combined_playlist_name}'")
 
             except NotFound:
                 # If the playlist doesn't exist, create a new one
-                print(f"Creating new playlist '{combined_playlist_name}'")
+                logging.info(f"Creating new playlist '{combined_playlist_name}'")
                 plex.createPlaylist(title=combined_playlist_name, items=combined_items)
-                print(f"Created combined playlist '{combined_playlist_name}' with {len(combined_items)} items.")
+                logging.info(f"Created combined playlist '{combined_playlist_name}' with {len(combined_items)} items.")
 
             except Exception as playlist_error:
                 # Log unexpected errors clearly
-                print(f"Failed to access or create playlist '{combined_playlist_name}': {playlist_error}")
+                logging.error(f"Failed to access or create playlist '{combined_playlist_name}': {playlist_error}")
                 raise
 
     except Exception as decade_error:
-        print(f"Failed to combine playlists for {decade['name']}: {decade_error}")
+        logging.error(f"Failed to combine playlists for {decade['name']}: {decade_error}")
