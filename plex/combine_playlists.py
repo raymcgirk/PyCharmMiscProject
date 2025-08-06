@@ -14,6 +14,7 @@ log_path = os.path.join(script_dir, "combine_playlists.log")
 
 logging.basicConfig(
     filename=log_path,
+    filemode='w',
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
@@ -127,33 +128,44 @@ for decade in decades:
             combined_items.sort(key=lambda x: x.originallyAvailableAt or x.addedAt)
             combined_playlist_name = f"{decade['name']} Unwatched Combined"
 
-            # Check if the combined playlist exists
             try:
                 combined_playlist = plex.playlist(combined_playlist_name)
                 logging.info(f"Updating existing playlist '{combined_playlist_name}'")
 
-                # Determine which items need to be added or removed
                 current_items = combined_playlist.items()
                 items_to_add = [item for item in combined_items if item not in current_items]
                 items_to_remove = [item for item in current_items if item not in combined_items]
 
-                # Update the playlist
-                if items_to_add:
-                    combined_playlist.addItems(items_to_add)
-                    logging.info(f"Added {len(items_to_add)} items to '{combined_playlist_name}'")
-
+                # Remove items not in current combined list
                 if items_to_remove:
                     combined_playlist.removeItems(items_to_remove)
                     logging.info(f"Removed {len(items_to_remove)} items from '{combined_playlist_name}'")
 
+                # Add items in batches of 500
+                for i in range(0, len(items_to_add), 500):
+                    batch = items_to_add[i:i + 500]
+                    combined_playlist.addItems(batch)
+                    logging.info(f"Added batch {i // 500 + 1} with {len(batch)} items to '{combined_playlist_name}'")
+                    time.sleep(1)
+
             except NotFound:
-                # If the playlist doesn't exist, create a new one
+                # Create playlist in 500-item batches
                 logging.info(f"Creating new playlist '{combined_playlist_name}'")
-                plex.createPlaylist(title=combined_playlist_name, items=combined_items)
-                logging.info(f"Created combined playlist '{combined_playlist_name}' with {len(combined_items)} items.")
+
+                combined_playlist = None
+
+                for i in range(0, len(combined_items), 500):
+                    batch = combined_items[i:i + 500]
+                    if i == 0:
+                        combined_playlist = plex.createPlaylist(title=combined_playlist_name, items=batch)
+                        logging.info(f"Created playlist '{combined_playlist_name}' with initial {len(batch)} items")
+                    else:
+                        combined_playlist.addItems(batch)
+                        logging.info(
+                            f"Appended batch {i // 500 + 1} with {len(batch)} items to '{combined_playlist_name}'")
+                    time.sleep(1)
 
             except Exception as playlist_error:
-                # Log unexpected errors clearly
                 logging.error(f"Failed to access or create playlist '{combined_playlist_name}': {playlist_error}")
                 raise
 
