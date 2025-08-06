@@ -42,6 +42,11 @@ else:
 # Safely fetch sections
 movies_section = safe_get_section(plex, 'My Movies')
 tv_shows_section = safe_get_section(plex, 'My TV Shows')
+try:
+    youtube_section = safe_get_section(plex, 'YouTube')
+except RuntimeError:
+    youtube_section = None
+    print("YouTube library section not found or unavailable. Skipping...")
 
 # Fetch all unique years in the library
 years = set()
@@ -55,6 +60,12 @@ for movie in movies_section.all():
 for show in tv_shows_section.all():
     if show.originallyAvailableAt:
         years.add(show.originallyAvailableAt.year)
+
+# Get all YouTube video years
+if youtube_section:
+    for video in youtube_section.all():
+        if video.originallyAvailableAt:
+            years.add(video.originallyAvailableAt.year)
 
 # If no years are found, exit
 if not years:
@@ -82,9 +93,16 @@ for decade in decades:
             unwatched_movies = movies_section.search(unwatched=True, year=year)
             # Unwatched TV episodes
             unwatched_tv_episodes = tv_shows_section.searchEpisodes(unwatched=True, year=year)
+            # Unwatched YouTube videos
+            unwatched_youtube = []
+            if youtube_section:
+                try:
+                    unwatched_youtube = youtube_section.search(unwatched=True, year=year)
+                except Exception as e:
+                    print(f"Error searching YouTube videos for year {year}: {e}")
 
             # Add movies and TV episodes to the combined list
-            combined_items += unwatched_movies + unwatched_tv_episodes
+            combined_items += unwatched_movies + unwatched_tv_episodes + unwatched_youtube
 
         # Print summary
         print(f"Found {len(combined_items)} unwatched items for {decade['name']}")
