@@ -10,7 +10,7 @@ dest_dir =
 retention_days = 60
 
 logfile = os.path.join(dest_dir, "backup_sync.log")
-sys.stdout = open(logfile, "a")
+sys.stdout = open(logfile, "w")
 sys.stderr = sys.stdout
 print(f"\n[{datetime.datetime.now()}] Running backup sync job")
 
