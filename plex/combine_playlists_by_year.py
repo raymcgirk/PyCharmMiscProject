@@ -1,0 +1,195 @@
+import os
+import sys
+import time
+from datetime import datetime, date
+
+import requests
+from plexapi.exceptions import NotFound
+from plexapi.server import PlexServer
+
+import logging
+
+# Set up logging to a file in the same directory as the script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+log_path = os.path.join(script_dir, "combine_playlists_by_year.log")
+
+logging.basicConfig(
+    filename=log_path,
+    filemode='w',
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
+# Also output to console
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+logging.getLogger().addHandler(console_handler)
+
+logging.info("Script started")
+
+PLEX_URL = os.getenv("PLEX_URL", "http://localhost:32400")
+PLEX_TOKEN = os.getenv("PLEX_TOKEN", "")
+
+# Get rebuild hour from env variable (default to 3 AM)
+try:
+    REBUILD_HOUR = int(os.getenv("REBUILD_HOUR", "3"))
+except ValueError:
+    logging.warning("Invalid REBUILD_HOUR value; falling back to 3")
+    REBUILD_HOUR = 3
+
+REBUILD_TRACKER_PATH = os.path.join(script_dir, "last_rebuild_by_year.txt")
+
+def should_do_rebuild():
+    now = datetime.now()
+
+    if now.hour < REBUILD_HOUR:
+        return False
+
+    if not os.path.exists(REBUILD_TRACKER_PATH):
+        return True
+
+    with open(REBUILD_TRACKER_PATH, "r") as f:
+        last_rebuild_date = f.read().strip()
+
+    return last_rebuild_date != str(date.today())
+
+def mark_rebuild_done():
+    with open(REBUILD_TRACKER_PATH, "w") as f:
+        f.write(str(date.today()))
+
+# Determine whether this run is a rebuild or an incremental update
+full_rebuild = should_do_rebuild()
+if full_rebuild:
+    logging.info(f"Performing full rebuild (after {REBUILD_HOUR}:00).")
+else:
+    logging.info("Performing incremental update (playlist append/remove only).")
+
+# Retry logic for unstable network/API
+def safe_get_section(plex_server, section_name, retries=3, delay=10):
+    for attempt_index in range(retries):
+        try:
+            return plex_server.library.section(section_name)
+        except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as error:
+            logging.warning(f"Timeout/connection error on section '{section_name}', attempt {attempt_index + 1}/{retries}: {error}")
+            time.sleep(delay)
+        except NotFound:
+            logging.warning(f"Library section '{section_name}' not found.")
+            break
+    raise RuntimeError(f"Failed to get section '{section_name}' after {retries} attempts")
+
+# Connect to Plex server with retry
+for attempt in range(3):
+    try:
+        plex = PlexServer(PLEX_URL, PLEX_TOKEN)
+        break
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Failed to connect to Plex server (attempt {attempt + 1}/3): {e}")
+        time.sleep(10)
+else:
+    logging.error("Could not connect to Plex server after retries.")
+    raise RuntimeError("Could not connect to Plex server after retries.")
+
+# Safely fetch sections
+movies_section = safe_get_section(plex, 'My Movies')
+tv_shows_section = safe_get_section(plex, 'My TV Shows')
+try:
+    youtube_section = safe_get_section(plex, 'YouTube')
+except RuntimeError:
+    youtube_section = None
+    logging.warning("YouTube library section not found or unavailable. Skipping...")
+
+# Fetch all unique years in the library
+years = set()
+
+# Get all movie years
+for movie in movies_section.all():
+    if movie.originallyAvailableAt:
+        years.add(movie.originallyAvailableAt.year)
+
+# Get all TV show years
+for show in tv_shows_section.all():
+    if show.originallyAvailableAt:
+        years.add(show.originallyAvailableAt.year)
+
+# Get all YouTube video years
+if youtube_section:
+    for video in youtube_section.all():
+        if video.originallyAvailableAt:
+            years.add(video.originallyAvailableAt.year)
+
+# If no years are found, exit
+if not years:
+    logging.info("No valid content years found.")
+    sys.exit(0)
+
+# Process each year individually
+for year in sorted(years):
+    try:
+        combined_items = []
+
+        # Unwatched movies
+        combined_items += movies_section.search(unwatched=True, year=year)
+
+        # Unwatched TV episodes
+        combined_items += tv_shows_section.searchEpisodes(unwatched=True, year=year)
+
+        # Unwatched YouTube
+        if youtube_section:
+            try:
+                combined_items += youtube_section.search(unwatched=True, year=year)
+            except Exception as e:
+                logging.error(f"Error searching YouTube videos for year {year}: {e}")
+
+        # Print summary
+        logging.info(f"Found {len(combined_items)} unwatched items for {year}")
+
+        combined_items.sort(key=lambda x: x.originallyAvailableAt or x.addedAt)
+        playlist_name = f"{year} Unwatched Combined"
+
+        # Handle creation/update/removal
+        try:
+            combined_playlist = plex.playlist(playlist_name)
+
+            if not combined_items:
+                combined_playlist.delete()
+                logging.info(f"Deleted empty playlist '{playlist_name}'")
+                continue
+
+            current_items = combined_playlist.items()
+            items_to_add = [item for item in combined_items if item not in current_items]
+            items_to_remove = [item for item in current_items if item not in combined_items]
+
+            if items_to_remove:
+                combined_playlist.removeItems(items_to_remove)
+                logging.info(f"Removed {len(items_to_remove)} items from '{playlist_name}'")
+
+            for i in range(0, len(items_to_add), 500):
+                batch = items_to_add[i:i + 500]
+                combined_playlist.addItems(batch)
+                logging.info(f"Added batch {i // 500 + 1} with {len(batch)} items to '{playlist_name}'")
+                time.sleep(1)
+
+        except NotFound:
+            if not combined_items:
+                logging.info(f"No unwatched items for {year}. Playlist will not be created.")
+                continue
+
+            combined_playlist = None
+
+            for i in range(0, len(combined_items), 500):
+                batch = combined_items[i:i + 500]
+                if i == 0:
+                    combined_playlist = plex.createPlaylist(title=playlist_name, items=batch)
+                    logging.info(f"Created playlist '{playlist_name}' with initial {len(batch)} items")
+                else:
+                    combined_playlist.addItems(batch)
+                    logging.info(f"Appended batch {i // 500 + 1} with {len(batch)} items to '{playlist_name}'")
+                time.sleep(1)
+
+    except Exception as e:
+        logging.error(f"Failed to process playlist for year {year}: {e}")
+
+if full_rebuild:
+    mark_rebuild_done()
+    logging.info("Rebuild completed and marked as done for today.")
