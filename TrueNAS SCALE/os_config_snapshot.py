@@ -2,11 +2,17 @@ import os
 import shutil
 import datetime
 from pathlib import Path
+import sys
 
 # Paths
-source_dir = r"\\TrueNAS-SCALE\OSBackup"
-dest_dir = r"C:\OSBackups"
+source_dir =
+dest_dir =
 retention_days = 60
+
+logfile = os.path.join(dest_dir, "backup_sync.log")
+sys.stdout = open(logfile, "a")
+sys.stderr = sys.stdout
+print(f"\n[{datetime.datetime.now()}] Running backup sync job")
 
 # Ensure destination exists
 os.makedirs(dest_dir, exist_ok=True)
