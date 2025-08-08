@@ -5,12 +5,16 @@ import os
 
 SOURCE_DEST_GROUPS = [
     {
-        "sources": [Path("A:\\"), Path("B:\\"), Path("C:\\")],
-        "destinations": [Path("D:\\")]
+        "sources": [Path("N:\\Downloaded")],
+        "destinations": [Path("L:\\Downloaded")]
     },
     {
-        "sources": [Path("E:\\"), Path("F:\\"), Path("G:\\")],
+        "sources": [Path("N:\\My Movies")],
         "destinations": [Path("H:\\")]
+    },
+    {
+        "sources": [Path("N:\\My TV Shows")],
+        "destinations": [Path("K:\\")]
     }
     # Add more groups as needed
 ]
@@ -52,6 +56,23 @@ def get_all_destination_paths() -> set[Path]:
     for group in SOURCE_DEST_GROUPS:
         paths.update(group["destinations"])
     return paths
+
+def remove_empty_dirs(path: Path) -> None:
+    if not path.is_dir():
+        return
+
+    for root, dirs, _ in os.walk(path, topdown=False):
+        for d in dirs:
+            dir_path = Path(root) / d
+            try:
+                # Skip excluded directories
+                if dir_path.name.lower() in EXCLUDED_DIRNAMES:
+                    continue
+                if not any(dir_path.iterdir()):
+                    dir_path.rmdir()
+                    print(f"[CLEANUP] Removed empty directory: {dir_path}")
+            except Exception as e:
+                print(f"[ERROR] Failed to remove {dir_path}: {e}")
 
 def scan_source_group(sources: list[Path], seen_files: set[tuple[str, int]]) -> list[tuple[Path, Path, os.stat_result]]:
     results = []
@@ -132,6 +153,21 @@ def move_file_to_destinations(
             try:
                 file_path.unlink()
                 print(f"[MOVE] {file_path} -> {target_path}")
+
+                # Clean up parent directories if empty
+                try:
+                    current = file_path.parent
+                    while current != file_path.drive and current != current.anchor and current.exists():
+                        if any(current.iterdir()):
+                            break
+                        if current.name.lower() in EXCLUDED_DIRNAMES:
+                            break
+                        current.rmdir()
+                        print(f"[CLEANUP] Removed empty directory: {current}")
+                        current = current.parent
+                except Exception as e:
+                    print(f"[ERROR] Failed to clean parent directories of {file_path}: {e}")
+
             except Exception as e:
                 print(f"[ERROR] Copied but failed to delete source {file_path}: {e}")
 
@@ -168,6 +204,12 @@ def main():
     all_destinations = get_all_destination_paths()
     existing_index = build_existing_file_index(list(all_destinations))
     seen_files: set[tuple[str, int]] = set()
+
+    # Remove empty source directories at startup
+    for group in SOURCE_DEST_GROUPS:
+        for source in group["sources"]:
+            if source.name.lower() not in EXCLUDED_DIRNAMES:
+                remove_empty_dirs(source)
 
     for group in SOURCE_DEST_GROUPS:
         process_file_group(group, existing_index, seen_files)
