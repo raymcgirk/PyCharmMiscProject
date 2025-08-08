@@ -1,13 +1,13 @@
 import os
 import sys
 import time
+import logging
 from datetime import datetime, date
 
 import requests
 from plexapi.exceptions import NotFound
 from plexapi.server import PlexServer
-
-import logging
+from plexapi import BASE_HEADERS
 
 # Set up logging to a file in the same directory as the script
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -81,6 +81,13 @@ def safe_get_section(plex_server, section_name, retries=3, delay=10):
 # Connect to Plex server with retry
 for attempt in range(3):
     try:
+        CLIENT_IDENTIFIER = os.getenv("PLEX_CLIENT_IDENTIFIER", "combine-playlists-script")
+
+        # Inject custom client identifier into global headers
+        BASE_HEADERS['X-Plex-Client-Identifier'] = CLIENT_IDENTIFIER
+        BASE_HEADERS['X-Plex-Product'] = "CombinePlaylistsByYear"
+        BASE_HEADERS['X-Plex-Version'] = "1.0"
+
         plex = PlexServer(PLEX_URL, PLEX_TOKEN)
         break
     except requests.exceptions.RequestException as e:
