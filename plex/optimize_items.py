@@ -1,6 +1,7 @@
 import os
 import logging
 from datetime import datetime
+from plexapi import BASE_HEADERS
 from plexapi.server import PlexServer
 from plexapi.exceptions import BadRequest
 
@@ -25,6 +26,12 @@ logging.basicConfig(
 )
 
 def get_plex_server():
+    client_identifier = os.getenv("PLEX_CLIENT_IDENTIFIER", "optimize-items-script")
+
+    BASE_HEADERS['X-Plex-Client-Identifier'] = client_identifier
+    BASE_HEADERS['X-Plex-Product'] = "OptimizeItems"
+    BASE_HEADERS['X-Plex-Version'] = "1.0"
+
     return PlexServer(PLEX_URL, PLEX_TOKEN)
 
 def has_mobile_optimized_versions(item):
