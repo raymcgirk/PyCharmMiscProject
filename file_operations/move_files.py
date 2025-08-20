@@ -39,7 +39,7 @@ def already_moved(rel_path: str, size: int, existing_index: set[tuple[str, int]]
     return (rel_path.lower(), size) in existing_index
 
 def retroactively_remove_empty_dirs(root_path: Path):
-    print(f"🧹 Scanning for pre-existing empty folders in: {root_path}")
+    print(f"Scanning for pre-existing empty folders in: {root_path}")
     for root, dirs, _ in os.walk(root_path, topdown=False):
         for d in dirs:
             dir_path = Path(root) / d
