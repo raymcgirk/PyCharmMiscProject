@@ -25,11 +25,11 @@ foreach ($item in $Drafts.Items) {
 }
 
 if ($Duplicates.Count -eq 0) {
-    Write-Host "✅ No duplicate drafts found."
+    Write-Host "No duplicate drafts found."
 } else {
-    Write-Host "⚠️ Found $($Duplicates.Count) duplicate draft(s):"
+    Write-Host "Found $($Duplicates.Count) duplicate draft(s):"
     foreach ($dup in $Duplicates) {
-        Write-Host "→ To: $($dup.To) | Subject: $($dup.Subject)"
+        Write-Host "To: $($dup.To) | Subject: $($dup.Subject)"
     }
 
     # To delete them, uncomment:

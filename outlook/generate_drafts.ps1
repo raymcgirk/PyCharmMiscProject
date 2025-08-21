@@ -39,7 +39,7 @@ Phone: $Phone
 "@
         Add-Content -Path $MissingEmailLog -Value $LogEntry
 
-        Write-Host "⚠️ Skipped $ClientName (no email)"
+        Write-Host "Skipped $ClientName (no email)"
         $row++
         continue
     }
@@ -47,7 +47,7 @@ Phone: $Phone
     # === Check and log missing PDF ===
     $AttachmentPath = Join-Path $AttachmentFolder "$ClientName.pdf"
     if (-not (Test-Path $AttachmentPath)) {
-        Write-Host "❌ Skipped $ClientName — Missing ledger ($AttachmentPath)"
+        Write-Host "Skipped $ClientName — Missing ledger ($AttachmentPath)"
         Add-Content -Path $MissingLedgerLog -Value $ClientName
         $row++
         continue
@@ -70,7 +70,7 @@ Phone: $Phone
     }
 
     if ($AlreadyExists) {
-        Write-Host "⏩ Skipped $ClientName — Draft already exists"
+        Write-Host "Skipped $ClientName — Draft already exists"
         $row++
         continue
     }
@@ -81,9 +81,9 @@ Phone: $Phone
         $Mail.To = $ClientEmail
         $Mail.Attachments.Add($AttachmentPath) | Out-Null
         $Mail.Save()
-        Write-Host "✅ Draft created for $ClientName <$ClientEmail>"
+        Write-Host "Draft created for $ClientName <$ClientEmail>"
     } catch {
-        Write-Host "🚨 Error creating draft for ${ClientName}: $_"
+        Write-Host "Error creating draft for ${ClientName}: $_"
     }
 
     $row++
@@ -97,4 +97,4 @@ Remove-Variable Excel, Workbook, Sheet, Namespace, Outlook
 [GC]::Collect()
 [GC]::WaitForPendingFinalizers()
 
-Write-Host "`n✅ Script complete. Check Drafts folder, $MissingEmailLog and $MissingLedgerLog for issues."
+Write-Host "`nScript complete. Check Drafts folder, $MissingEmailLog and $MissingLedgerLog for issues."

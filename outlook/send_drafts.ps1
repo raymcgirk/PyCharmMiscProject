@@ -14,12 +14,12 @@ foreach ($item in $DraftsFolder.Items) {
 # === SEND EACH DRAFT WITH DELAY ===
 foreach ($Mail in $Drafts) {
     try {
-        Write-Host "📤 Sending: $($Mail.Subject)"
+        Write-Host "Sending: $($Mail.Subject)"
         $Mail.Send()
         Start-Sleep -Seconds 5
     } catch {
-        Write-Host "⚠️ Failed to send: $($Mail.Subject) — $_"
+        Write-Host "Failed to send: $($Mail.Subject) — $_"
     }
 }
 
-Write-Host "`n✅ All drafts processed."
+Write-Host "`nAll drafts processed."
